@@ -1,0 +1,121 @@
+import PyPDF2
+import nltk
+import string
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Ensure NLTK resources are available (run once, not every time)
+try:
+    nltk.data.find("tokenizers/punkt")
+except LookupError:
+    nltk.download("punkt")
+try:
+    nltk.data.find("corpora/stopwords")
+except LookupError:
+    nltk.download("stopwords")
+
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.corpus import stopwords
+
+# Load and extract text from PDF
+def extract_text(pdf_path):
+    with open(pdf_path, "rb") as f:
+        reader = PyPDF2.PdfReader(f)
+        return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+
+# Preprocess text
+def preprocess_text(text):
+    stop_words = set(stopwords.words("english"))
+    sentences = sent_tokenize(text)
+    cleaned_sentences = []
+
+    for sentence in sentences:
+        words = word_tokenize(sentence.lower())
+        words = [w for w in words if w not in stop_words and w not in string.punctuation]
+        cleaned_sentences.append(" ".join(words))
+
+    return sentences, cleaned_sentences
+
+# Vectorizer
+def build_vectorizer(cleaned_sentences):
+    vectorizer = TfidfVectorizer()
+    tfidf_matrix = vectorizer.fit_transform(cleaned_sentences)
+    return vectorizer, tfidf_matrix
+
+# Get best matching question
+def find_best_match(user_input, vectorizer, tfidf_matrix):
+    stop_words = set(stopwords.words("english"))
+    user_cleaned = " ".join([
+        word for word in word_tokenize(user_input.lower())
+        if word not in stop_words and word not in string.punctuation
+    ])
+    user_vector = vectorizer.transform([user_cleaned])
+    similarity_scores = cosine_similarity(user_vector, tfidf_matrix)
+    best_idx = similarity_scores.argmax()
+    confidence = similarity_scores[0][best_idx]
+    return best_idx, confidence
+
+# Chatbot flow
+def chatbot():
+    print("🤖 JEE Main 2024 Bot: Hello!🙌 I'm here to help you with JEE Main FAQs.✌️")
+
+    # Setup
+    text = extract_text("Jeemain-FAQ.pdf")
+    if not text.strip():
+        print("🤖 JEE Bot: Sorry, the FAQ PDF appears to be empty or unreadable.")
+        return
+    original, cleaned = preprocess_text(text)
+    vectorizer, tfidf = build_vectorizer(cleaned)
+
+    pending_question = None
+    pending_answer = None
+
+    confirmation_words = [
+        'yes', 'y', 'yeah', 'correct', 'confirm', 'sure', 'ok', 'okay', 'affirmative', 'affirm', 'agree',
+        'yep', 'yup', 'absolutely', 'definitely', 'indeed', 'exactly', 'right', 'true', 'yes please', 'yes indeed', 'same'
+    ]
+
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() in ['hi', 'hello', 'hey', 'how are you', 'namaste', 'greetings']:
+            print("🤖 JEE Bot: Hello, How can I Help U")
+            continue
+        # Exit condition
+        if user_input.lower() in ['thanku', 'thanks', 'exit', 'quit', 'bye', 'have a nice day', 'goodbye', 'see you later', 'see you soon']:
+            print("🤖 JEE Bot: Good Day😊! All the best for your exams!🤗")
+            break
+
+        # If user said "yes" to previous clarification
+        if pending_question and user_input.lower() in confirmation_words:
+            print(f"🤖 JEE Bot: {pending_answer}")
+            pending_question = None
+            pending_answer = None
+            continue
+
+        # Match query
+        best_idx, confidence = find_best_match(user_input, vectorizer, tfidf)
+
+        # Low confidence – ask for confirmation
+
+        if confidence < 0.2:
+            print("🤖 JEE Bot: Sorry, I couldn't find a relevant answer to your question. Please try rephrasing.")
+            pending_question = None
+            pending_answer = None
+
+        elif confidence < 0.55:
+            suggested_question = original[best_idx]
+            suggested_answer = original[best_idx + 1] if best_idx + 1 < len(original) else ""
+
+            pending_question = suggested_question
+            pending_answer = suggested_answer
+
+            print(f"🤖 JEE Bot:\n→ {suggested_question}\n(Type 'yes' to confirm)")
+        else:
+            # Return the answer (next sentence), not the question itself
+            answer = original[best_idx + 1] if best_idx + 1 < len(original) else original[best_idx]
+            print(f"🤖 JEE Bot: {answer}")
+            pending_question = None
+            pending_answer = None
+
+if __name__ == "__main__":
+    chatbot()
